@@ -125,3 +125,62 @@ fn normalize_pipe_path(path: &str) -> String {
 fn to_wide_string(s: &str) -> Vec<u16> {
     s.encode_utf16().chain(std::iter::once(0)).collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_normalize_pipe_path_forward_slashes() {
+        let result = normalize_pipe_path("//./pipe/test");
+        assert_eq!(result, "\\\\.\\pipe\\test");
+    }
+
+    #[test]
+    fn test_normalize_pipe_path_already_backslashes() {
+        let result = normalize_pipe_path("\\\\.\\pipe\\test");
+        assert_eq!(result, "\\\\.\\pipe\\test");
+    }
+
+    #[test]
+    fn test_normalize_pipe_path_mixed() {
+        let result = normalize_pipe_path("//./pipe\\openssh-ssh-agent");
+        assert_eq!(result, "\\\\.\\pipe\\openssh-ssh-agent");
+    }
+
+    #[test]
+    fn test_to_wide_string_ascii() {
+        let result = to_wide_string("abc");
+        assert_eq!(result, vec!['a' as u16, 'b' as u16, 'c' as u16, 0]);
+    }
+
+    #[test]
+    fn test_to_wide_string_empty() {
+        let result = to_wide_string("");
+        assert_eq!(result, vec![0]);
+    }
+
+    #[test]
+    fn test_to_wide_string_unicode() {
+        let result = to_wide_string("日本語");
+        assert_eq!(result.len(), 4); // 3 chars + null terminator
+        assert_eq!(*result.last().unwrap(), 0);
+    }
+
+    #[test]
+    fn test_to_wide_string_pipe_path() {
+        let result = to_wide_string("\\\\.\\pipe\\test");
+        assert!(result.len() > 1);
+        assert_eq!(*result.last().unwrap(), 0);
+    }
+
+    #[test]
+    fn test_constants() {
+        assert_eq!(GENERIC_READ, 0x80000000);
+        assert_eq!(GENERIC_WRITE, 0x40000000);
+        assert_eq!(ERROR_FILE_NOT_FOUND, 2);
+        assert_eq!(ERROR_PIPE_BUSY, 231);
+        assert_eq!(POLL_INTERVAL_MS, 200);
+        assert_eq!(MAX_POLL_ATTEMPTS, 300);
+    }
+}

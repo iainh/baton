@@ -153,3 +153,113 @@ fn is_broken_pipe(e: &io::Error) -> bool {
         || e.raw_os_error() == Some(109) // ERROR_BROKEN_PIPE
         || e.raw_os_error() == Some(233) // ERROR_PIPE_NOT_CONNECTED
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::{Cursor, ErrorKind};
+
+    #[test]
+    fn test_relay_state_initial() {
+        let state = RelayState::new();
+        assert!(!state.stdin_done.load(Ordering::SeqCst));
+        assert!(!state.pipe_done.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn test_relay_state_set() {
+        let state = RelayState::new();
+        state.stdin_done.store(true, Ordering::SeqCst);
+        state.pipe_done.store(true, Ordering::SeqCst);
+        assert!(state.stdin_done.load(Ordering::SeqCst));
+        assert!(state.pipe_done.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn test_is_broken_pipe_error_kind() {
+        let e = io::Error::new(ErrorKind::BrokenPipe, "broken pipe");
+        assert!(is_broken_pipe(&e));
+    }
+
+    #[test]
+    fn test_is_broken_pipe_windows_error_109() {
+        let e = io::Error::from_raw_os_error(109);
+        assert!(is_broken_pipe(&e));
+    }
+
+    #[test]
+    fn test_is_broken_pipe_windows_error_233() {
+        let e = io::Error::from_raw_os_error(233);
+        assert!(is_broken_pipe(&e));
+    }
+
+    #[test]
+    fn test_is_broken_pipe_other_error() {
+        let e = io::Error::new(ErrorKind::NotFound, "not found");
+        assert!(!is_broken_pipe(&e));
+    }
+
+    #[test]
+    fn test_buffer_size_constant() {
+        assert_eq!(BUFFER_SIZE, 32768);
+    }
+
+    struct MockWriter {
+        data: Vec<u8>,
+        write_error: Option<ErrorKind>,
+    }
+
+    impl MockWriter {
+        fn new() -> Self {
+            Self {
+                data: Vec::new(),
+                write_error: None,
+            }
+        }
+
+        fn with_error(kind: ErrorKind) -> Self {
+            Self {
+                data: Vec::new(),
+                write_error: Some(kind),
+            }
+        }
+    }
+
+    impl Write for MockWriter {
+        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+            if let Some(kind) = self.write_error {
+                return Err(io::Error::new(kind, "mock error"));
+            }
+            self.data.extend_from_slice(buf);
+            Ok(buf.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn test_mock_writer_captures_data() {
+        let mut writer = MockWriter::new();
+        writer.write_all(b"hello").unwrap();
+        assert_eq!(writer.data, b"hello");
+    }
+
+    #[test]
+    fn test_mock_writer_error() {
+        let mut writer = MockWriter::with_error(ErrorKind::BrokenPipe);
+        let result = writer.write(b"test");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_cursor_as_mock_reader() {
+        let data = b"test data";
+        let mut reader = Cursor::new(data.to_vec());
+        let mut buf = [0u8; 9];
+        let n = reader.read(&mut buf).unwrap();
+        assert_eq!(n, 9);
+        assert_eq!(&buf, data);
+    }
+}

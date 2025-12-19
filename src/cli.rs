@@ -106,4 +106,60 @@ mod tests {
         assert!(args.assuan);
         assert!(args.verbose);
     }
+
+    #[test]
+    fn test_parse_missing_pipe_name() {
+        let result = CliArgs::try_parse_from(["baton"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_config_from_args() {
+        let args = CliArgs::try_parse_from(["baton", "-p", "-v", "//./pipe/test"]).unwrap();
+        let config: Config = args.into();
+        assert_eq!(config.pipe_name, "//./pipe/test");
+        assert!(config.poll);
+        assert!(config.verbose);
+        assert!(!config.limited_poll);
+        assert!(!config.assuan);
+    }
+
+    #[test]
+    fn test_parse_windows_style_path() {
+        let args = CliArgs::try_parse_from(["baton", "\\\\.\\pipe\\openssh-ssh-agent"]).unwrap();
+        assert_eq!(args.pipe_name, "\\\\.\\pipe\\openssh-ssh-agent");
+    }
+
+    #[test]
+    fn test_parse_unix_style_path() {
+        let args = CliArgs::try_parse_from(["baton", "//./pipe/docker_engine"]).unwrap();
+        assert_eq!(args.pipe_name, "//./pipe/docker_engine");
+    }
+
+    #[test]
+    fn test_parse_assuan_socket_path() {
+        let args =
+            CliArgs::try_parse_from(["baton", "-a", "C:\\Users\\test\\AppData\\Roaming\\gnupg\\S.gpg-agent"])
+                .unwrap();
+        assert!(args.assuan);
+        assert!(args.pipe_name.contains("gnupg"));
+    }
+
+    #[test]
+    fn test_version_flag() {
+        let result = CliArgs::try_parse_from(["baton", "--version"]);
+        assert!(result.is_err()); // --version causes early exit
+    }
+
+    #[test]
+    fn test_help_flag() {
+        let result = CliArgs::try_parse_from(["baton", "--help"]);
+        assert!(result.is_err()); // --help causes early exit
+    }
+
+    #[test]
+    fn test_unknown_flag() {
+        let result = CliArgs::try_parse_from(["baton", "--unknown", "//./pipe/test"]);
+        assert!(result.is_err());
+    }
 }
