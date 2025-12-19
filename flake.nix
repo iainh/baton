@@ -14,14 +14,8 @@
         fenixPkgs = fenix.packages.${system};
 
         # Rust toolchain with Windows cross-compilation target
-        rustToolchain = [
-          (fenixPkgs.stable.withComponents [
-            "cargo"
-            "rustc"
-            "rust-src"
-            "rust-analyzer"
-            "clippy"
-          ])
+        rustToolchain = fenixPkgs.combine [
+          fenixPkgs.stable.toolchain
           fenixPkgs.targets.x86_64-pc-windows-gnu.stable.rust-std
         ];
       in
