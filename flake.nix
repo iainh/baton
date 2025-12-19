@@ -3,23 +3,27 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
-    rust-overlay.url = "github:oxalica/rust-overlay";
+    fenix.url = "github:nix-community/fenix";
     flake-utils.url = "github:numtide/flake-utils";
   };
 
-  outputs = { self, nixpkgs, rust-overlay, flake-utils, ... }:
+  outputs = { self, nixpkgs, fenix, flake-utils, ... }:
     flake-utils.lib.eachDefaultSystem (system:
       let
-        overlays = [ (import rust-overlay) ];
-        pkgs = import nixpkgs {
-          inherit system overlays;
-        };
+        pkgs = import nixpkgs { inherit system; };
+        fenixPkgs = fenix.packages.${system};
 
         # Rust toolchain with Windows cross-compilation target
-        rustToolchain = pkgs.rust-bin.stable.latest.default.override {
-          extensions = [ "rust-src" "rust-analyzer" "clippy" ];
-          targets = [ "x86_64-pc-windows-gnu" ];
-        };
+        rustToolchain = [
+          (fenixPkgs.stable.withComponents [
+            "cargo"
+            "rustc"
+            "rust-src"
+            "rust-analyzer"
+            "clippy"
+          ])
+          fenixPkgs.targets.x86_64-pc-windows-gnu.stable.rust-std
+        ];
       in
       {
         devShells.default = pkgs.mkShell {
