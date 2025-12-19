@@ -8,10 +8,14 @@ use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, HANDLE, INVALID_HANDLE_VALUE};
-use windows_sys::Win32::Security::{SECURITY_ANONYMOUS, SECURITY_SQOS_PRESENT};
 use windows_sys::Win32::Storage::FileSystem::{
-    CreateFileW, FILE_FLAG_OVERLAPPED, GENERIC_READ, GENERIC_WRITE, OPEN_EXISTING,
+    CreateFileW, FILE_FLAG_OVERLAPPED, OPEN_EXISTING,
 };
+
+const GENERIC_READ: u32 = 0x80000000;
+const GENERIC_WRITE: u32 = 0x40000000;
+const SECURITY_SQOS_PRESENT: u32 = 0x00100000;
+const SECURITY_ANONYMOUS: u32 = 0;
 
 const ERROR_FILE_NOT_FOUND: u32 = 2;
 const ERROR_PIPE_BUSY: u32 = 231;

@@ -24,7 +24,6 @@ fn main() {
 #[cfg(windows)]
 fn real_main() -> anyhow::Result<()> {
     use crate::win::{hide_console_window, NamedPipe};
-    use std::io::{Read, Write};
 
     let config = cli::parse();
     logging::init_logging(config.verbose);
