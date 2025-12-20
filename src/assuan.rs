@@ -1,5 +1,5 @@
-use crate::cli::Config;
-use crate::errors::BatonError;
+use baton::cli::Config;
+use baton::errors::BatonError;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Read};
 use std::net::TcpStream;

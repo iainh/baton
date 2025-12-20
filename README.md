@@ -18,15 +18,17 @@ Baton relays data between stdin/stdout and Windows named pipes, typically used w
 cargo build --release
 ```
 
-The binary will be at `target/release/baton.exe`.
+The binaries will be at:
+- `target/release/baton.exe` — Main relay utility
+- `target/release/list_pipes.exe` — Named pipe enumeration utility (optional)
 
 ## Usage
+
+### baton — Main Relay Tool
 
 ```bash
 baton [FLAGS] <pipe-name>
 ```
-
-### Flags
 
 | Flag | Description |
 |------|-------------|
@@ -39,7 +41,32 @@ baton [FLAGS] <pipe-name>
 | `-a` | Assuan socket mode (for GnuPG) |
 | `-v` | Verbose logging |
 
+### list_pipes — Named Pipe Enumeration
+
+```bash
+list_pipes [OPTIONS]
+```
+
+| Option | Description |
+|--------|-------------|
+| `-f, --filter <PATTERN>` | Filter pipes by glob pattern (e.g., `docker_*`) |
+| `-v, --verbose` | Enable verbose logging |
+
+See [list_pipes documentation](docs/list_pipes.md) for details.
+
 ### Examples
+
+**Discover available pipes:**
+```bash
+# List all pipes
+list_pipes.exe
+
+# List Docker-related pipes
+list_pipes.exe -f "docker*"
+
+# List all agent pipes
+list_pipes.exe -f "*agent*"
+```
 
 **Docker relay:**
 ```bash

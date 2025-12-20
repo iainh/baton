@@ -1,11 +1,11 @@
 mod assuan;
-mod cli;
-mod errors;
-mod logging;
-mod relay;
+
+use baton::{cli, logging, relay};
 
 #[cfg(windows)]
-mod win;
+mod win {
+    pub use baton::win::*;
+}
 
 #[cfg(windows)]
 fn main() {
@@ -23,7 +23,7 @@ fn main() {
 
 #[cfg(windows)]
 fn real_main() -> anyhow::Result<()> {
-    use crate::win::{hide_console_window, NamedPipe};
+    use baton::win::{hide_console_window, NamedPipe};
 
     let config = cli::parse();
     logging::init_logging(config.verbose);
@@ -56,20 +56,20 @@ fn real_main() -> anyhow::Result<()> {
 #[cfg(windows)]
 struct PipeReader {
     handle: windows_sys::Win32::Foundation::HANDLE,
-    pool: std::sync::Arc<win::overlapped::EventPool>,
+    pool: std::sync::Arc<baton::win::overlapped::EventPool>,
 }
 
 #[cfg(windows)]
 impl std::io::Read for PipeReader {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        win::overlapped::async_read(self.handle, buf, &self.pool)
+        baton::win::overlapped::async_read(self.handle, buf, &self.pool)
     }
 }
 
 #[cfg(windows)]
 struct PipeWriter {
     handle: windows_sys::Win32::Foundation::HANDLE,
-    pool: std::sync::Arc<win::overlapped::EventPool>,
+    pool: std::sync::Arc<baton::win::overlapped::EventPool>,
 }
 
 #[cfg(windows)]

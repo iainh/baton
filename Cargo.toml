@@ -15,6 +15,12 @@ env_logger = "0.11"
 anyhow = "1"
 thiserror = "2"
 
+# Glob pattern matching
+glob = "0.3"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+
 [dev-dependencies]
 tempfile = "3"
 
@@ -29,3 +35,6 @@ windows-sys = { version = "0.61", features = [
     "Win32_System_Console",
     "Win32_UI_WindowsAndMessaging",
 ] }
+
+# WMI for named pipe enumeration
+wmi = "0.14"
