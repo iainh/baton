@@ -25,6 +25,7 @@
             rustToolchain
             pkgs.cargo-watch
             pkgs.cargo-edit
+            pkgs.cargo-outdated
           ] ++ pkgs.lib.optionals pkgs.stdenv.isDarwin [
             # macOS cross-compilation to Windows
             pkgs.pkgsCross.mingwW64.stdenv.cc
