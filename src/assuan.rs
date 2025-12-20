@@ -10,6 +10,11 @@ const NONCE_SIZE: usize = 16;
 const POLL_INTERVAL_MS: u64 = 200;
 const MAX_POLL_ATTEMPTS: u32 = 300;
 
+// Validate constants at compile time
+const _: () = assert!(NONCE_SIZE > 0);
+const _: () = assert!(POLL_INTERVAL_MS > 0);
+const _: () = assert!(MAX_POLL_ATTEMPTS > 0);
+
 pub fn connect_assuan(config: &Config) -> Result<TcpStream, BatonError> {
     let (port, nonce) = parse_assuan_file(&config.pipe_name)?;
 

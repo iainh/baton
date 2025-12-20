@@ -34,9 +34,10 @@ impl EventPool {
     pub fn get(&self) -> io::Result<HANDLE> {
         let mut events = self.inner.lock().unwrap();
         if let Some(h) = events.pop() {
-            unsafe {
-                ResetEvent(h);
-            }
+            // ResetEvent only fails if the handle is invalid, which cannot happen
+            // here since we created it. Debug-assert to catch logic errors.
+            let result = unsafe { ResetEvent(h) };
+            debug_assert!(result != 0, "ResetEvent failed on valid handle");
             return Ok(h);
         }
         drop(events);
@@ -87,6 +88,8 @@ impl<'a> Drop for EventGuard<'a> {
 /// The caller must ensure `handle` is a valid, open file/pipe handle opened
 /// with FILE_FLAG_OVERLAPPED.
 pub unsafe fn async_read(handle: HANDLE, buf: &mut [u8], pool: &EventPool) -> io::Result<usize> {
+    debug_assert!(!buf.is_empty(), "async_read called with empty buffer");
+
     let event_guard = EventGuard::new(pool)?;
 
     let mut overlapped: OVERLAPPED = MaybeUninit::zeroed().assume_init();

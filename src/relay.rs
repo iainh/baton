@@ -6,6 +6,9 @@ use std::thread;
 
 const BUFFER_SIZE: usize = 32768;
 
+// Validate buffer size is reasonable at compile time
+const _: () = assert!(BUFFER_SIZE >= 4096 && BUFFER_SIZE <= 1024 * 1024);
+
 pub struct RelayState {
     pub stdin_done: AtomicBool,
     pub pipe_done: AtomicBool,
