@@ -37,7 +37,7 @@ fn parse_assuan_file(path: &str) -> Result<(u16, Vec<u8>), BatonError> {
         .read_line(&mut port_line)
         .map_err(|e| BatonError::AssuanParse(format!("cannot read port line: {}", e)))?;
 
-    let port_str = port_line.trim_end_matches(|c| c == '\r' || c == '\n');
+    let port_str = port_line.trim_end_matches(['\r', '\n']);
     let port: u16 = port_str
         .parse()
         .map_err(|e| BatonError::AssuanParse(format!("invalid port number '{}': {}", port_str, e)))?;

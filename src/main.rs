@@ -1,11 +1,9 @@
+#![deny(warnings)]
+#![deny(clippy::all)]
+
 mod assuan;
 
 use baton::{cli, logging, relay};
-
-#[cfg(windows)]
-mod win {
-    pub use baton::win::*;
-}
 
 #[cfg(windows)]
 fn main() {
@@ -62,7 +60,8 @@ struct PipeReader {
 #[cfg(windows)]
 impl std::io::Read for PipeReader {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        baton::win::overlapped::async_read(self.handle, buf, &self.pool)
+        // SAFETY: handle is valid while PipeReader exists (owned by NamedPipe)
+        unsafe { baton::win::overlapped::async_read(self.handle, buf, &self.pool) }
     }
 }
 
@@ -75,7 +74,8 @@ struct PipeWriter {
 #[cfg(windows)]
 impl std::io::Write for PipeWriter {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        win::overlapped::async_write(self.handle, buf, &self.pool)
+        // SAFETY: handle is valid while PipeWriter exists (owned by NamedPipe)
+        unsafe { baton::win::overlapped::async_write(self.handle, buf, &self.pool) }
     }
 
     fn flush(&mut self) -> std::io::Result<()> {

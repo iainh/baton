@@ -1,5 +1,3 @@
-#![cfg(windows)]
-
 use crate::cli::Config;
 use crate::errors::BatonError;
 use crate::win::overlapped::{async_read, async_write, EventPool};
@@ -96,13 +94,15 @@ impl NamedPipe {
 
 impl Read for NamedPipe {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        async_read(self.handle, buf, &self.pool)
+        // SAFETY: self.handle is valid while NamedPipe exists (closed in Drop)
+        unsafe { async_read(self.handle, buf, &self.pool) }
     }
 }
 
 impl Write for NamedPipe {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        async_write(self.handle, buf, &self.pool)
+        // SAFETY: self.handle is valid while NamedPipe exists (closed in Drop)
+        unsafe { async_write(self.handle, buf, &self.pool) }
     }
 
     fn flush(&mut self) -> io::Result<()> {

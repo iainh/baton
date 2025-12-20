@@ -20,6 +20,12 @@ impl RelayState {
     }
 }
 
+impl Default for RelayState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 pub fn run_relay<R, W>(
     mut pipe_reader: R,
     mut pipe_writer: W,

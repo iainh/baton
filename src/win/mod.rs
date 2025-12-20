@@ -1,5 +1,3 @@
-#![cfg(windows)]
-
 pub mod console;
 pub mod overlapped;
 pub mod pipe;

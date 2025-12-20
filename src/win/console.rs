@@ -1,5 +1,3 @@
-#![cfg(windows)]
-
 use windows_sys::Win32::System::Console::GetConsoleWindow;
 use windows_sys::Win32::UI::WindowsAndMessaging::{ShowWindow, SW_HIDE};
 

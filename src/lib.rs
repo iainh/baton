@@ -1,3 +1,6 @@
+#![deny(warnings)]
+#![deny(clippy::all)]
+
 pub mod cli;
 pub mod errors;
 pub mod logging;
