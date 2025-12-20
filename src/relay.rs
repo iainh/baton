@@ -59,6 +59,8 @@ where
     let result = pipe_to_stdout(&mut pipe_reader, exit_on_pipe_eof, &state);
 
     if !exit_on_pipe_eof {
+        // Intentionally ignore: thread panic would have been logged; we only
+        // care about graceful shutdown, not propagating panics here.
         let _ = stdin_thread.join();
     }
 

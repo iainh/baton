@@ -83,6 +83,9 @@ impl std::io::Write for PipeWriter {
     }
 }
 
+// SAFETY: PipeReader/PipeWriter contain a HANDLE (pointer-sized) and Arc<EventPool>.
+// HANDLEs are thread-safe to use from any thread; Arc provides thread-safe sharing.
+// The underlying pipe was opened with overlapped I/O, which is safe for concurrent access.
 #[cfg(windows)]
 unsafe impl Send for PipeReader {}
 
