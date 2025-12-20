@@ -1,3 +1,13 @@
+//! Overlapped I/O helpers for Windows named pipes.
+//!
+//! Windows named pipes opened with FILE_FLAG_OVERLAPPED require asynchronous
+//! I/O operations. This module provides synchronous wrappers that internally
+//! use overlapped structures with manual-reset events, allowing the relay
+//! threads to block on I/O while remaining interruptible.
+//!
+//! The EventPool amortizes event handle creation across many I/O operations,
+//! avoiding repeated CreateEvent/CloseHandle syscalls in the hot path.
+
 use std::io;
 use std::mem::MaybeUninit;
 use std::ptr;

@@ -1,3 +1,13 @@
+//! Windows named pipe connection and I/O.
+//!
+//! Named pipes are the primary IPC mechanism on Windows. This module handles
+//! connecting to existing pipes (as a client) with optional polling for pipes
+//! that may not exist yet (e.g., waiting for a service to start).
+//!
+//! We use FILE_FLAG_OVERLAPPED because standard blocking I/O on named pipes
+//! cannot be interrupted, which would prevent graceful shutdown when either
+//! stdin or the pipe closes.
+
 use crate::cli::Config;
 use crate::errors::BatonError;
 use crate::win::overlapped::{async_read, async_write, EventPool};
@@ -12,6 +22,9 @@ use windows_sys::Win32::Storage::FileSystem::{
 
 const GENERIC_READ: u32 = 0x80000000;
 const GENERIC_WRITE: u32 = 0x40000000;
+
+// Security Quality of Service flags: prevent the pipe server from impersonating
+// our security context. This matches npiperelay behavior for defense in depth.
 const SECURITY_SQOS_PRESENT: u32 = 0x00100000;
 const SECURITY_ANONYMOUS: u32 = 0;
 

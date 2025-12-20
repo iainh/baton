@@ -1,3 +1,10 @@
+//! Bidirectional relay between stdin/stdout and a pipe (or TCP stream).
+//!
+//! The relay runs two threads: one copying stdin→pipe, one copying pipe→stdout.
+//! AtomicBool flags coordinate shutdown when either side reaches EOF or errors.
+//! This design allows immediate response to EOF on either side without complex
+//! async machinery.
+
 use crate::cli::Config;
 use std::io::{self, Read, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -157,6 +164,11 @@ fn pipe_to_stdout<R: Read>(
     Ok(())
 }
 
+/// Check if an I/O error indicates the pipe is broken/disconnected.
+///
+/// Windows uses different error codes than Unix for pipe disconnection:
+/// - 109 (ERROR_BROKEN_PIPE): pipe was closed by the other end
+/// - 233 (ERROR_PIPE_NOT_CONNECTED): pipe instance is not connected
 fn is_broken_pipe(e: &io::Error) -> bool {
     matches!(e.kind(), io::ErrorKind::BrokenPipe)
         || e.raw_os_error() == Some(109) // ERROR_BROKEN_PIPE
