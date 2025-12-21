@@ -36,5 +36,4 @@ windows-sys = { version = "0.61", features = [
     "Win32_UI_WindowsAndMessaging",
 ] }
 
-# WMI for named pipe enumeration
-wmi = "0.14"
+

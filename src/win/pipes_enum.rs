@@ -7,31 +7,57 @@ pub struct EnumeratedPipe {
     pub name: String,
 }
 
-/// Query all Windows named pipes via WMI
+/// Enumerate all Windows named pipes via filesystem (\\.\pipe\*)
 #[cfg(windows)]
 pub fn enumerate_pipes() -> anyhow::Result<Vec<EnumeratedPipe>> {
-    use serde::Deserialize;
-    use wmi::{COMLibrary, WMIConnection};
+    use std::mem::MaybeUninit;
+    use windows_sys::Win32::Foundation::{GetLastError, ERROR_NO_MORE_FILES, INVALID_HANDLE_VALUE};
+    use windows_sys::Win32::Storage::FileSystem::{
+        FindClose, FindFirstFileW, FindNextFileW, WIN32_FIND_DATAW,
+    };
 
-    /// WMI Win32_NamedPipeFile struct for deserialization
-    #[derive(Debug, Clone, Deserialize)]
-    struct NamedPipeFileWmi {
-        name: String,
+    let search_path: Vec<u16> = r"\\.\pipe\*".encode_utf16().chain(std::iter::once(0)).collect();
+
+    let mut find_data = MaybeUninit::<WIN32_FIND_DATAW>::uninit();
+    let handle = unsafe { FindFirstFileW(search_path.as_ptr(), find_data.as_mut_ptr()) };
+
+    if handle == INVALID_HANDLE_VALUE {
+        let err = unsafe { GetLastError() };
+        anyhow::bail!("FindFirstFileW failed with error code {}", err);
     }
 
-    let com_lib = COMLibrary::new()?;
-    let wmi_con = WMIConnection::new(com_lib)?;
+    let mut pipes = Vec::new();
+    let mut find_data = unsafe { find_data.assume_init() };
 
-    let results: Vec<NamedPipeFileWmi> = wmi_con.query()?;
+    loop {
+        let name = wchar_to_string(&find_data.cFileName);
+        if !name.is_empty() && name != "." && name != ".." {
+            pipes.push(EnumeratedPipe { name });
+        }
 
-    debug!("WMI returned {} named pipes", results.len());
+        let success = unsafe { FindNextFileW(handle, &mut find_data) };
+        if success == 0 {
+            let err = unsafe { GetLastError() };
+            if err == ERROR_NO_MORE_FILES {
+                break;
+            }
+            unsafe { FindClose(handle) };
+            anyhow::bail!("FindNextFileW failed with error code {}", err);
+        }
+    }
 
-    Ok(results
-        .into_iter()
-        .map(|pipe_file| EnumeratedPipe {
-            name: extract_pipe_name(&pipe_file.name),
-        })
-        .collect())
+    unsafe { FindClose(handle) };
+
+    debug!("Filesystem enumeration found {} named pipes", pipes.len());
+
+    Ok(pipes)
+}
+
+/// Convert null-terminated wide string to String
+#[cfg(windows)]
+fn wchar_to_string(wchars: &[u16]) -> String {
+    let len = wchars.iter().position(|&c| c == 0).unwrap_or(wchars.len());
+    String::from_utf16_lossy(&wchars[..len])
 }
 
 /// Filter pipes by glob pattern
@@ -51,45 +77,9 @@ pub fn filter_pipes(
     }
 }
 
-/// Extract pipe name from WMI path
-fn extract_pipe_name(path: &str) -> String {
-    // Paths may look like:
-    // - "\\.\pipe\pipename"
-    // - "Global\pipename"
-    // - "\Device\NamedPipe\pipename"
-    path.rsplit(['\\', '/'])
-        .next()
-        .unwrap_or(path)
-        .to_string()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_extract_pipe_name_windows_style() {
-        let name = extract_pipe_name(r"\.\pipe\docker_engine");
-        assert_eq!(name, "docker_engine");
-    }
-
-    #[test]
-    fn test_extract_pipe_name_global() {
-        let name = extract_pipe_name(r"Global\gpg-agent");
-        assert_eq!(name, "gpg-agent");
-    }
-
-    #[test]
-    fn test_extract_pipe_name_device() {
-        let name = extract_pipe_name(r"\Device\NamedPipe\openssh-ssh-agent");
-        assert_eq!(name, "openssh-ssh-agent");
-    }
-
-    #[test]
-    fn test_extract_pipe_name_simple() {
-        let name = extract_pipe_name("simple_pipe");
-        assert_eq!(name, "simple_pipe");
-    }
 
     #[test]
     fn test_filter_pipes_no_pattern() {
