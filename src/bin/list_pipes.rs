@@ -12,6 +12,10 @@ struct Args {
     /// Enable verbose logging for debugging
     #[arg(short, long)]
     verbose: bool,
+
+    /// Output full pipe paths (e.g., \\.\pipe\name) instead of just names
+    #[arg(short, long)]
+    path: bool,
 }
 
 #[cfg(windows)]
@@ -39,7 +43,11 @@ fn main() -> Result<()> {
 
     // Output one pipe per line
     for pipe in filtered {
-        println!("{}", pipe.name);
+        if args.path {
+            println!(r"\\.\pipe\{}", pipe.name);
+        } else {
+            println!("{}", pipe.name);
+        }
     }
 
     Ok(())
@@ -97,6 +105,26 @@ mod tests {
         let args = Args::try_parse_from(["list_pipes", "-v", "-f", "agent*"]).unwrap();
         assert_eq!(args.filter.as_deref(), Some("agent*"));
         assert!(args.verbose);
+    }
+
+    #[test]
+    fn test_parse_path() {
+        let args = Args::try_parse_from(["list_pipes", "-p"]).unwrap();
+        assert!(args.path);
+    }
+
+    #[test]
+    fn test_parse_path_long() {
+        let args = Args::try_parse_from(["list_pipes", "--path"]).unwrap();
+        assert!(args.path);
+    }
+
+    #[test]
+    fn test_parse_all_flags() {
+        let args = Args::try_parse_from(["list_pipes", "-v", "-p", "-f", "agent*"]).unwrap();
+        assert_eq!(args.filter.as_deref(), Some("agent*"));
+        assert!(args.verbose);
+        assert!(args.path);
     }
 
     #[test]
