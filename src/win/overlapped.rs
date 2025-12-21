@@ -9,13 +9,14 @@
 //! avoiding repeated CreateEvent/CloseHandle syscalls in the hot path.
 
 use std::io;
-use std::mem::MaybeUninit;
 use std::ptr;
 use std::sync::Mutex;
 use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, HANDLE, WAIT_OBJECT_0};
 use windows_sys::Win32::Storage::FileSystem::{ReadFile, WriteFile};
 use windows_sys::Win32::System::IO::{GetOverlappedResult, OVERLAPPED};
-use windows_sys::Win32::System::Threading::{CreateEventW, ResetEvent, WaitForSingleObject, INFINITE};
+use windows_sys::Win32::System::Threading::{
+    CreateEventW, ResetEvent, WaitForSingleObject, INFINITE,
+};
 
 const ERROR_IO_PENDING: u32 = 997;
 
@@ -23,8 +24,8 @@ pub struct EventPool {
     inner: Mutex<Vec<HANDLE>>,
 }
 
-// SAFETY: EventPool only contains a Mutex<Vec<HANDLE>>. HANDLEs are pointer-sized
-// values that are safe to send between threads. The Mutex provides synchronization.
+// SAFETY: EventPool only contains a Mutex<Vec<HANDLE>>. HANDLEs are OS-level
+// identifiers that are safe to send between threads. The Mutex provides synchronization.
 unsafe impl Send for EventPool {}
 unsafe impl Sync for EventPool {}
 
@@ -44,20 +45,12 @@ impl EventPool {
     pub fn get(&self) -> io::Result<HANDLE> {
         let mut events = self.inner.lock().unwrap();
         if let Some(h) = events.pop() {
-            // ResetEvent only fails if the handle is invalid, which cannot happen
-            // here since we created it. Debug-assert to catch logic errors.
-            let result = unsafe { ResetEvent(h) };
-            debug_assert!(result != 0, "ResetEvent failed on valid handle");
+            reset_event(h);
             return Ok(h);
         }
         drop(events);
 
-        let h = unsafe { CreateEventW(ptr::null(), 1, 0, ptr::null()) };
-        if h.is_null() {
-            Err(io::Error::last_os_error())
-        } else {
-            Ok(h)
-        }
+        create_manual_reset_event()
     }
 
     pub fn put(&self, h: HANDLE) {
@@ -73,6 +66,56 @@ impl Drop for EventPool {
                 CloseHandle(h);
             }
         }
+    }
+}
+
+/// A handle that is guaranteed to have been opened with FILE_FLAG_OVERLAPPED.
+/// This type encodes the invariant at construction time, allowing async_read/async_write
+/// to be safe to call.
+#[derive(Debug, Clone, Copy)]
+pub struct OverlappedHandle(HANDLE);
+
+// SAFETY: Windows HANDLEs are safe to send between threads. The underlying OS handle
+// can be used from any thread, and the OverlappedHandle is just a wrapper around
+// a pointer-sized value that doesn't depend on thread-local state.
+unsafe impl Send for OverlappedHandle {}
+unsafe impl Sync for OverlappedHandle {}
+
+impl OverlappedHandle {
+    /// Creates an OverlappedHandle from a raw HANDLE.
+    ///
+    /// # Safety
+    /// The caller must ensure `handle` is a valid handle opened with FILE_FLAG_OVERLAPPED
+    /// and owned by this process.
+    pub unsafe fn from_raw(handle: HANDLE) -> Self {
+        Self(handle)
+    }
+
+    pub fn raw(&self) -> HANDLE {
+        self.0
+    }
+}
+
+fn create_manual_reset_event() -> io::Result<HANDLE> {
+    let h = unsafe { CreateEventW(ptr::null(), 1, 0, ptr::null()) };
+    if h.is_null() {
+        Err(io::Error::last_os_error())
+    } else {
+        Ok(h)
+    }
+}
+
+fn reset_event(handle: HANDLE) {
+    let result = unsafe { ResetEvent(handle) };
+    debug_assert!(result != 0, "ResetEvent failed on valid handle");
+}
+
+fn check_io_pending() -> io::Result<()> {
+    let err = unsafe { GetLastError() };
+    if err == ERROR_IO_PENDING {
+        Ok(())
+    } else {
+        Err(io::Error::from_raw_os_error(err as i32))
     }
 }
 
@@ -94,42 +137,42 @@ impl<'a> Drop for EventGuard<'a> {
     }
 }
 
-/// # Safety
-/// The caller must ensure `handle` is a valid, open file/pipe handle opened
-/// with FILE_FLAG_OVERLAPPED.
-pub unsafe fn async_read(handle: HANDLE, buf: &mut [u8], pool: &EventPool) -> io::Result<usize> {
+pub fn async_read(
+    handle: OverlappedHandle,
+    buf: &mut [u8],
+    pool: &EventPool,
+) -> io::Result<usize> {
     debug_assert!(!buf.is_empty(), "async_read called with empty buffer");
 
     let event_guard = EventGuard::new(pool)?;
 
-    let mut overlapped: OVERLAPPED = MaybeUninit::zeroed().assume_init();
+    let mut overlapped = OVERLAPPED::default();
     overlapped.hEvent = event_guard.handle;
 
     let mut bytes_read: u32 = 0;
-    let result = ReadFile(
-        handle,
-        buf.as_mut_ptr().cast(),
-        buf.len() as u32,
-        &mut bytes_read,
-        &mut overlapped,
-    );
+    let result = unsafe {
+        ReadFile(
+            handle.raw(),
+            buf.as_mut_ptr().cast(),
+            buf.len() as u32,
+            &mut bytes_read,
+            &mut overlapped,
+        )
+    };
 
     if result != 0 {
         return Ok(bytes_read as usize);
     }
 
-    let err = GetLastError();
-    if err != ERROR_IO_PENDING {
-        return Err(io::Error::from_raw_os_error(err as i32));
-    }
+    check_io_pending()?;
 
-    let wait_result = WaitForSingleObject(event_guard.handle, INFINITE);
+    let wait_result = unsafe { WaitForSingleObject(event_guard.handle, INFINITE) };
     if wait_result != WAIT_OBJECT_0 {
         return Err(io::Error::last_os_error());
     }
 
     let mut transferred: u32 = 0;
-    let success = GetOverlappedResult(handle, &overlapped, &mut transferred, 0);
+    let success = unsafe { GetOverlappedResult(handle.raw(), &overlapped, &mut transferred, 0) };
     if success == 0 {
         return Err(io::Error::last_os_error());
     }
@@ -137,40 +180,36 @@ pub unsafe fn async_read(handle: HANDLE, buf: &mut [u8], pool: &EventPool) -> io
     Ok(transferred as usize)
 }
 
-/// # Safety
-/// The caller must ensure `handle` is a valid, open file/pipe handle opened
-/// with FILE_FLAG_OVERLAPPED.
-pub unsafe fn async_write(handle: HANDLE, buf: &[u8], pool: &EventPool) -> io::Result<usize> {
+pub fn async_write(handle: OverlappedHandle, buf: &[u8], pool: &EventPool) -> io::Result<usize> {
     let event_guard = EventGuard::new(pool)?;
 
-    let mut overlapped: OVERLAPPED = MaybeUninit::zeroed().assume_init();
+    let mut overlapped = OVERLAPPED::default();
     overlapped.hEvent = event_guard.handle;
 
     let mut bytes_written: u32 = 0;
-    let result = WriteFile(
-        handle,
-        buf.as_ptr().cast(),
-        buf.len() as u32,
-        &mut bytes_written,
-        &mut overlapped,
-    );
+    let result = unsafe {
+        WriteFile(
+            handle.raw(),
+            buf.as_ptr().cast(),
+            buf.len() as u32,
+            &mut bytes_written,
+            &mut overlapped,
+        )
+    };
 
     if result != 0 {
         return Ok(bytes_written as usize);
     }
 
-    let err = GetLastError();
-    if err != ERROR_IO_PENDING {
-        return Err(io::Error::from_raw_os_error(err as i32));
-    }
+    check_io_pending()?;
 
-    let wait_result = WaitForSingleObject(event_guard.handle, INFINITE);
+    let wait_result = unsafe { WaitForSingleObject(event_guard.handle, INFINITE) };
     if wait_result != WAIT_OBJECT_0 {
         return Err(io::Error::last_os_error());
     }
 
     let mut transferred: u32 = 0;
-    let success = GetOverlappedResult(handle, &overlapped, &mut transferred, 0);
+    let success = unsafe { GetOverlappedResult(handle.raw(), &overlapped, &mut transferred, 0) };
     if success == 0 {
         return Err(io::Error::last_os_error());
     }

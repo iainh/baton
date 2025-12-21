@@ -40,9 +40,12 @@ fn real_main() -> anyhow::Result<()> {
     } else {
         let pipe = NamedPipe::connect(&config)?;
         let pool = pipe.pool();
-        let handle = pipe.raw_handle();
+        let handle = pipe.handle();
 
-        let reader = PipeReader { handle, pool: pool.clone() };
+        let reader = PipeReader {
+            handle,
+            pool: pool.clone(),
+        };
         let writer = PipeWriter { handle, pool };
 
         relay::run_relay(reader, writer, &config)?;
@@ -53,41 +56,30 @@ fn real_main() -> anyhow::Result<()> {
 
 #[cfg(windows)]
 struct PipeReader {
-    handle: windows_sys::Win32::Foundation::HANDLE,
+    handle: baton::win::overlapped::OverlappedHandle,
     pool: std::sync::Arc<baton::win::overlapped::EventPool>,
 }
 
 #[cfg(windows)]
 impl std::io::Read for PipeReader {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        // SAFETY: handle is valid while PipeReader exists (owned by NamedPipe)
-        unsafe { baton::win::overlapped::async_read(self.handle, buf, &self.pool) }
+        baton::win::overlapped::async_read(self.handle, buf, &self.pool)
     }
 }
 
 #[cfg(windows)]
 struct PipeWriter {
-    handle: windows_sys::Win32::Foundation::HANDLE,
+    handle: baton::win::overlapped::OverlappedHandle,
     pool: std::sync::Arc<baton::win::overlapped::EventPool>,
 }
 
 #[cfg(windows)]
 impl std::io::Write for PipeWriter {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        // SAFETY: handle is valid while PipeWriter exists (owned by NamedPipe)
-        unsafe { baton::win::overlapped::async_write(self.handle, buf, &self.pool) }
+        baton::win::overlapped::async_write(self.handle, buf, &self.pool)
     }
 
     fn flush(&mut self) -> std::io::Result<()> {
         Ok(())
     }
 }
-
-// SAFETY: PipeReader/PipeWriter contain a HANDLE (pointer-sized) and Arc<EventPool>.
-// HANDLEs are thread-safe to use from any thread; Arc provides thread-safe sharing.
-// The underlying pipe was opened with overlapped I/O, which is safe for concurrent access.
-#[cfg(windows)]
-unsafe impl Send for PipeReader {}
-
-#[cfg(windows)]
-unsafe impl Send for PipeWriter {}

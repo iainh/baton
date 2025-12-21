@@ -10,15 +10,13 @@
 
 use crate::cli::Config;
 use crate::errors::BatonError;
-use crate::win::overlapped::{async_read, async_write, EventPool};
+use crate::win::overlapped::{async_read, async_write, EventPool, OverlappedHandle};
 use std::io::{self, Read, Write};
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
-use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, HANDLE, INVALID_HANDLE_VALUE};
-use windows_sys::Win32::Storage::FileSystem::{
-    CreateFileW, FILE_FLAG_OVERLAPPED, OPEN_EXISTING,
-};
+use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, INVALID_HANDLE_VALUE};
+use windows_sys::Win32::Storage::FileSystem::{CreateFileW, FILE_FLAG_OVERLAPPED, OPEN_EXISTING};
 
 const GENERIC_READ: u32 = 0x80000000;
 const GENERIC_WRITE: u32 = 0x40000000;
@@ -34,12 +32,9 @@ const POLL_INTERVAL_MS: u64 = 200;
 const MAX_POLL_ATTEMPTS: u32 = 300;
 
 pub struct NamedPipe {
-    handle: HANDLE,
+    handle: OverlappedHandle,
     pool: Arc<EventPool>,
 }
-
-unsafe impl Send for NamedPipe {}
-unsafe impl Sync for NamedPipe {}
 
 impl NamedPipe {
     pub fn connect(config: &Config) -> Result<Self, BatonError> {
@@ -55,7 +50,7 @@ impl NamedPipe {
 
         let mut attempts = 0;
         loop {
-            let handle = unsafe {
+            let raw_handle = unsafe {
                 CreateFileW(
                     wide_path.as_ptr(),
                     GENERIC_READ | GENERIC_WRITE,
@@ -67,8 +62,10 @@ impl NamedPipe {
                 )
             };
 
-            if handle != INVALID_HANDLE_VALUE {
+            if raw_handle != INVALID_HANDLE_VALUE {
                 log::debug!("Connected to named pipe: {}", config.pipe_name);
+                // SAFETY: raw_handle is valid and was opened with FILE_FLAG_OVERLAPPED
+                let handle = unsafe { OverlappedHandle::from_raw(raw_handle) };
                 return Ok(Self { handle, pool });
             }
 
@@ -100,22 +97,20 @@ impl NamedPipe {
         Arc::clone(&self.pool)
     }
 
-    pub fn raw_handle(&self) -> HANDLE {
+    pub fn handle(&self) -> OverlappedHandle {
         self.handle
     }
 }
 
 impl Read for NamedPipe {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        // SAFETY: self.handle is valid while NamedPipe exists (closed in Drop)
-        unsafe { async_read(self.handle, buf, &self.pool) }
+        async_read(self.handle, buf, &self.pool)
     }
 }
 
 impl Write for NamedPipe {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        // SAFETY: self.handle is valid while NamedPipe exists (closed in Drop)
-        unsafe { async_write(self.handle, buf, &self.pool) }
+        async_write(self.handle, buf, &self.pool)
     }
 
     fn flush(&mut self) -> io::Result<()> {
@@ -126,7 +121,7 @@ impl Write for NamedPipe {
 impl Drop for NamedPipe {
     fn drop(&mut self) {
         unsafe {
-            CloseHandle(self.handle);
+            CloseHandle(self.handle.raw());
         }
     }
 }
